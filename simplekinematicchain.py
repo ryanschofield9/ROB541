@@ -2,7 +2,7 @@ import os
 import sys
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.append(parent_dir)
-from geomotion import rigidbody as rb
+from ground_truth.geomotion import rigidbody as rb
 import numpy as np
 from matplotlib import pyplot as plt
 
@@ -51,11 +51,15 @@ class KinematicChain:
         for i, alpha in enumerate(joint_angles):
 
             # Multiply the ith joint angle by the ith joint axis
+            #print(f"Joint axes at {i}: {self.joint_axes[i]}")
             scaled_axis= alpha * self.joint_axes[i]
+            #print(f"Scaled axis at {i}: {scaled_axis}")
 
             # Exponentiate the scaled axis (it's in the Lie algebra, so either exp_L or exp_R will work) and save it to
             # the ith element of self.joint_transforms
+
             self.joint_transforms[i]= scaled_axis.exp_L  
+            
 
         ########
         # Take the cumulative product of the joint transforms and link elements, saving the end point of each link to
@@ -72,6 +76,13 @@ class KinematicChain:
             # Set the ith element of self.link_positions to be the product of the (i-1)th element, the ith
             # joint transform, and the ith link transform
             self.link_positions[i] =self.link_positions[i-1] * self.joint_transforms[i] * self.links[i]
+            '''
+            if i == 1:
+                self.link_positions[i][1] += 0.133
+
+            if i == 2:
+                self.link_positions[i][1] -= 0.133
+            '''
 
         return self.link_positions
         
@@ -87,7 +98,7 @@ class KinematicChain:
         # (for the basepoint)
         x = [0]
         y = [0]
-
+        #print(f"self.link_positions in draw function: {self.link_positions[1]}")
         # Loop over self.link_positions
         for l in self.link_positions:
 
@@ -96,6 +107,9 @@ class KinematicChain:
             # append the first and second elements of this value to the x and y lists
             x.append(l[0])
             y.append(l[1])
+        
+        #print(f"X in draw function: {x}")
+        #print(f"Y in draw function: {y}")
 
 
         # Plot the x and y values as a line
@@ -103,6 +117,10 @@ class KinematicChain:
 
         # Set the plot aspect ratio to 'equal'
         ax.set_aspect('equal')
+
+        ax.set_xlim(-10,10)
+        ax.set_ylim(-10,10)
+
 
         return
 

@@ -3,15 +3,18 @@ import os
 import sys
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.append(parent_dir)
-from geomotion import (
+from ground_truth.geomotion import (
     utilityfunctions as ut,
     rigidbody as rb)
-from HW3 import simplekinematicchain as kc
+from ground_truth import simplekinematicchain as kc
 import numpy as np
 from matplotlib import pyplot as plt
+from scipy.integrate import ode
 
 # Set the group as SE2 from rigidbody
 G = rb.SE2
+
+G2 = rb.SE3 
 
 
 class DiffKinematicChain(kc.KinematicChain):
@@ -80,14 +83,16 @@ class DiffKinematicChain(kc.KinematicChain):
         return J
     
     def Jacobian_Ad(self,
-                    link_index,  # Link number (with 1 as the first link)
+                    link_index, group, # Link number (with 1 as the first link)
                     output_frame='body'):  # options are world, body, spatial
+        
+        #print(f"self.links: {self.links}")
 
         """Calculate the Jacobian by using the Adjoint to transfer velocities from the joints to the origin"""
 
         # Construct Jacobian matrix J as an ndarray of zeros with as many rows as the group has dimensions,
         # and as many columns as there are joints
-        J = np.zeros((G.n_dim,len(self.joint_axes)))
+        J = np.zeros((group.n_dim,len(self.joint_axes)))
 
         ########
         # Populate the Jacobian matrix by finding the position of each joint in the world (which is the same as the
@@ -95,7 +100,7 @@ class DiffKinematicChain(kc.KinematicChain):
 
         # Make a list named link_positions_with_base that is the same as self.link_positions, but additionally has an
         # identity element inserted before the first entry
-        link_positions_with_base = [G.identity_element()]
+        link_positions_with_base = [group.identity_element()]
         link_positions_with_base.extend(self.link_positions)
 
         # Loop from 1 to link_index (i.e., range(1, link_index+1) )
@@ -123,8 +128,31 @@ class DiffKinematicChain(kc.KinematicChain):
 
         return J
 
+    def calc_joint_speeds(self, velocity):
+        J_inv = np.linalg.pinv(self.last_Jacobian)
+        print("Self.last Jacobian: ", self.last_Jacobian)
+        return (J_inv @ velocity)
+
+    def calc_new_joint_pose(self, dt, velocity, kc_new):
+        angular_velocity = self.calc_joint_speeds(velocity)
+        # getting new position with joint velocity, time, and current joint angles 
+        new_joint_angles = []
+        for idx, pos in enumerate(self.joint_angles):
+            new_angle = (angular_velocity[idx][0] * dt) + pos 
+            new_joint_angles.append(new_angle)
+       
+        kc_new.set_configuration(new_joint_angles)
+        if np.linalg.matrix_rank(self.last_Jacobian) == 6:
+            print("At Singularity")
+            print("\n")
+            print("\n")
+            print("\n")
+        return new_joint_angles
+            
+        
+
     def draw_Jacobian(self,
-                      ax, title):
+                      ax, title, draw):
 
         """ Draw the components of the last-requested Jacobian"""
 
@@ -140,15 +168,22 @@ class DiffKinematicChain(kc.KinematicChain):
         y = mat_tile[1,:].flatten()
         j_x = self.last_Jacobian[0,:]
         j_y = self.last_Jacobian[1,:]
+        print(f"Last x pos: {x[-1]} Last y pos: {y[-1]}")
+        if draw: 
+            self.original_y_draw = y[-1]
+            self.original_x_draw = x[-1]
+        plt.plot([0,5], [self.original_y_draw, self.original_y_draw])
+        plt.plot([self.original_x_draw, self.original_x_draw],[-1,3] )
         ax.quiver(x, y, j_x, j_y,angles = 'xy', scale_units = 'xy', scale = 4)
         ax.set_aspect ("equal")
-        ax.set_xlim(0,5)
-        ax.set_ylim(-1,3)
+        ax.set_xlim(-5,10)
+        ax.set_ylim(-5,10)
         ax.set_title(title)
         
 
 
 if __name__ == "__main__":
+    '''
     # Create a list of three links, all extending in the x direction with different lengths
     links = [G.element([3, 0, 0]), G.element([2, 0, 0]), G.element([1, 0, 0])]
 
@@ -160,7 +195,53 @@ if __name__ == "__main__":
 
     # Set the joint angles to pi/4, -pi/2 and 3*pi/4
     kc.set_configuration([.25 * np.pi, -.5 * np.pi, .75 * np.pi])
+   
+    J_Ad = kc.Jacobian_Ad(3,G,'world')
+    ax = plt.subplot(2, 3, 1)
+    kc.draw(ax)
     
+    kc.draw_Jacobian(ax, 'Testing', True)
+    
+    desired_vel = np.array([[-1],[-1],[0]])
+    for x in range (2,7):
+        kc.calc_new_joint_pose(0.1, desired_vel)
+        ax = plt.subplot(2, 3, x)
+        kc.draw(ax)
+        kc.draw_Jacobian(ax, f'Testing {x}', False)
+    
+    plt.show()
+
+    print("Starting G2 ")
+    
+    '''
+   
+    
+    links = [G2.element([1, 0, 0, 0, 0, 0]), G2.element([1, 0, 0, 0, 0,0]), G2.element([1, 0, 0, 0, 0, 0]), G2.element([1, 0, 0, 0, 0, 0]), G2.element([1, 0, 0, 0, 0, 0]), G2.element([1, 0, 0, 0, 0, 0])]
+    joint_axes = [G2.Lie_alg_vector([0, 0, 0, 0, 0, 1])] * 6
+    # Create a kinematic chain
+    kc = DiffKinematicChain(links, joint_axes)
+
+    # Set the joint angles to pi/4, -pi/2 and 3*pi/4
+    kc.set_configuration([0, np.pi/2, 0, 0, 0, 0])
+   
+    J_Ad = kc.Jacobian_Ad(6, G2,'world')
+
+    ax = plt.subplot(2, 3, 1)
+    kc.draw(ax)
+    
+    kc.draw_Jacobian(ax, 'Testing', True)
+    
+    desired_vel = np.array([[-1],[-1],[0], [0], [0], [0]])
+    for x in range (2,7):
+        kc.calc_new_joint_pose(0.1, desired_vel)
+        ax = plt.subplot(2, 3, x)
+        kc.draw(ax)
+        kc.draw_Jacobian(ax, f'Testing {x}', False)
+    
+    plt.show()
+    
+    #'''
+    '''
     # Create a plotting axis
     ax = plt.subplot(2, 3, 1)
 
@@ -226,3 +307,4 @@ if __name__ == "__main__":
 
     # Tell pyplot to draw
     plt.show()
+    '''
